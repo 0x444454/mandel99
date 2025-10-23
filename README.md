@@ -2,7 +2,7 @@
 A fast hi-res Mandelbrot generator for the TI-99/4A
 
 ![screenshots](media/screenshot-20251022.png)
-![screenshots](media/screenshot-20251022-2.png)
+
 
 # REQUIREMENTS
 
