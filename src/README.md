@@ -24,8 +24,8 @@ Open the ```asm.sh``` script and edit the ```XDT99_PATH``` variable to match you
 XDT99_PATH="../../xdt99"
 ```
 
-## Build (i.e. run the script)
-
+## Build
+Just run the script.
 This will create a ```mandel99.dsk``` disk image containing something like:
 ```console
 MANDEL99  :     71 used  289 free   90 KB  1S/1D 40T  9 S/T
