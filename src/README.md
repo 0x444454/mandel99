@@ -1,6 +1,6 @@
 # HOW TO BUILD FROM SOURCES
 
-## REQUIREMENTS
+## Requirements
 
 - TI 99 Cross-Development Tools: https://github.com/endlos99/xdt99
 - A bash shell to run the ```asm.sh``` script.
@@ -18,7 +18,7 @@ BUILD_TYPE  EQU     0
 
 ## Edit the xdt99 path in the script
 
-Open the ```asm.sh``` script and edit the ```XDT99_PATH``` variable to match your installation path.
+Open the ```asm.sh``` script and edit the ```XDT99_PATH``` variable to match your installation path:
 
 ```bash
 XDT99_PATH="../../xdt99"
