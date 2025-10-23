@@ -46,8 +46,8 @@ You have different options:
 A quick way to test if you don't have a real machine:
 - Install the Classic99 emulator: https://github.com/tursilion/classic99
 - Run Classic99.
-- Select menu "Disk" -> "Dsk 1" -> "Set DSK1". A window will open.
-- In the DSK1 window. Set "Disk Type" to "TI Controller (DSK)", and set "Path" to the ```mandel99.dsk``` disk image path.
+- Select menu "Disk" -> "Dsk 1" -> "Set DSK1". A "DSK1" window will open.
+- In the "DSK1" window. Set "Disk Type" to "TI Controller (DSK)", and set "Path" to the ```mandel99.dsk``` disk image path.
 - Drag an Extended Basic ROM image file into the Classic99 window. You'll be asked to reboot the machine.
 - At the boot prompt, press any key, then select "2 FOR TI EXTENDED BASIC".
 - The disk should autoboot and load the program (may take several seconds).
