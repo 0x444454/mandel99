@@ -1,5 +1,5 @@
 # mandel99
-A fast Mandelbrot generator for the TI-99/4A
+A fast hi-res Mandelbrot generator for the TI-99/4A
 
 ![screenshots](media/screenshot-20251022.png)
 
