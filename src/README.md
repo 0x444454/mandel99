@@ -1,9 +1,11 @@
-# REQUIREMENTS
+# HOW TO BUILD FROM SOURCES
+
+## REQUIREMENTS
 
 - TI 99 Cross-Development Tools: https://github.com/endlos99/xdt99
 - A bash shell to run the ```asm.sh``` script.
 
-# SELECT THE BUILD TYPE (if needed)
+## Select the build type (if needed)
 
 Open the ```mandel99.asm``` file. At the beginning, you will find the following lines:
 
@@ -14,7 +16,7 @@ Open the ```mandel99.asm``` file. At the beginning, you will find the following 
 BUILD_TYPE  EQU     0
 ```
 
-# EDIT xdt99 PATH
+## Edit the xdt99 path in the script
 
 Open the ```asm.sh``` script and edit the ```XDT99_PATH``` variable to match your installation path.
 
@@ -22,12 +24,34 @@ Open the ```asm.sh``` script and edit the ```XDT99_PATH``` variable to match you
 XDT99_PATH="../../xdt99"
 ```
 
+## Build (i.e. run the script)
 
+This will create a ```mandel99.dsk``` disk image containing something like:
+```console
+MANDEL99  :     71 used  289 free   90 KB  1S/1D 40T  9 S/T
+----------------------------------------------------------------------------
+LOAD          2  PROGRAM        217 B             2025-10-22 18:58:18 C
+MANDEL99     47  DIS/FIX 80   11760 B  138 recs   2025-10-22 18:58:18 C
+MANDEL995    20  PROGRAM       4692 B             2025-10-22 18:58:18 C
+```
 
-# BUILD THE BINARY
+## Run
 
+You have different options:
 
+- ```LOAD```: This is the BASIC program used for Extended Basic autoload. Note that standard TI Basic cannot autoload.
+- ```MANDEL99```: This is the executable program.
+- ```MANDEL995```: This is the binary to run using Editor/Assembler option 5. Notice the "5" at the end.
 
+A quick way to test if you don't have a real machine:
+- Install the Classic99 emulator: https://github.com/tursilion/classic99
+- Run Classic99.
+- Select menu "Disk" -> "Dsk 1" -> "Set DSK1". A window will open.
+- In the DSK1 window. Set "Disk Type" to "TI Controller (DSK)", and set "Path" to the ```mandel99.dsk``` disk image path.
+- Drag an Extended Basic ROM image file into the Classic99 window. You'll be asked to reboot the machine.
+- At the boot prompt, press any key, then select "2 FOR TI EXTENDED BASIC".
+- The disk should autoboot and load the program (may take several seconds).
+- When loading is complete, the program will finally run.
 
 # LICENSE
 
