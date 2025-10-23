@@ -25,7 +25,7 @@ XDT99_PATH="../../xdt99"
 ```
 
 ## Build
-Just run the script.
+Just run the script.  
 This will create a ```mandel99.dsk``` disk image containing something like:
 ```console
 MANDEL99  :     71 used  289 free   90 KB  1S/1D 40T  9 S/T
