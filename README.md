@@ -52,33 +52,37 @@ Here is the maximum magnitude reached for each point during the calculation:
 
 ![screenshots](media/max_values.jpg)
 
-While Q5.11 is arguably the best compromise between max-zoom and overflow errors during calculation, however in this version we use Q6.10 to keep the calculation routine size small enough to fit in fast SRAM. A future optimization allowing Q5.11 (hence 2x deeper zoom) is most probably possible.
+Q5.11 is arguably the best compromise between max-zoom and overflow errors during calculation, however in this version I use Q6.10 to keep the calculation routine size small enough to fit in fast SRAM. A future optimization allowing Q5.11 (hence 2x deeper zoom) is most probably possible.
 
 ### Rendering
 
 The rendering is done in two passes:
-- First pass is low-res (32x24). This serves both as a preview and and to optimize the second pass.
+- First pass is low-res (32x24).
 - Second pass is high-res (256x192).
 
 The first pass is low-resolution and serves two purposes:
 - Quick preview of rendered image.
-- Buffer iterations for second pass optimization ("smart" skip).
+- Buffer iterations for second pass optimization.
 
 The second pass is high resolution (well, for an 8-bit machine ;-).
-Each low-resolution "big" pixel in the first pass is either skipped (if nearby pixels have the same color) or re-calculated as a 8x8 hi-res tile.
+Each low-resolution "big" pixel calculated in the first pass is either left untouched (if all adjacent pixels have the same color) or re-calculated as a 8x8 hi-res tile.
+This is particularly useful to skip calculation of parts of the Mandelbrot set (i.e. the black area).
 
 ### Hi-res (Graphics II) color clash optimization
 
-Alas, the VDP (Video Display Processor) cannot render independent per-pixel colors in high-res.
-Each block of 8x1 pixels can only have two colors: Foreground and Background.
-This is not as bad as on other computers (e.g. the ZX Spectrum has that limitation for 8x8 pixels), but we still need to optimize the rendering.
-The color clash optimization is as follows:
-- Colors are re-ordered as a gradient minimizing perceptual difference between adjacent colors. This means adjacent iterations produce similar color shades.
-- For each 8x1 block, we calculate the color histogram and find the 2 most used colors to assign to Foreground and Background.
-- For each pixel in the 8x1 block, we pick Foreground or Background based on perceptual distance (color similarity).
+Alas, the VDP (Video Display Processor) cannot render independent per-pixel colors in high-res.  
+Each block of 8x1 pixels can only have two colors: Foreground and Background.  
+This is not as bad as on other computers (e.g. the ZX Spectrum has this limitation for 8x8 pixel blocks), but we still need to optimize the rendering.  
 
-Doesn't this extra step slow down calculation ?  
-Yes. However, the result is not acceptable without, as color clashes would be a lot more visible in busy areas.
+The color clash optimization is as follows:
+- Color 0 (transparent) is never used.
+- Color 1 (black) is only used for the Mandelbrot set.
+- The other 14 colors are re-ordered as a gradient minimizing perceptual difference between adjacent colors. This means adjacent iterations produce similar color shades.
+- For each 8x1 block, we calculate the color histogram and find the 2 most used colors to assign to Foreground and Background.
+- For each pixel in the 8x1 block, we use the most similar Foreground or Background colors; i.e. whichever minimizes the perceptual distance frome the actual calculated color.
+
+Q: Doesn't this extra step slow down calculation ?  
+A: Yes. However, the result would not be acceptable without it, due to much more visible color errors in busy areas.
 
 # LICENSE
 
