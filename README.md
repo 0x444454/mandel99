@@ -79,7 +79,7 @@ The color clash optimization is as follows:
 - Color 1 (black) is only used for the Mandelbrot set.
 - The other 14 colors are re-ordered as a gradient minimizing perceptual difference between adjacent colors. This means adjacent iterations produce similar color shades.
 - For each 8x1 block, we calculate the color histogram and find the 2 most used colors to assign to Foreground and Background.
-- For each pixel in the 8x1 block, we use the most similar Foreground or Background colors; i.e. whichever minimizes the perceptual distance from the actual calculated color.
+- For each pixel in the 8x1 block, we use the most similar color, either Foreground or Background; i.e. the one with minimum perceptual distance from the actual calculated pixel color.
 
 Q: Doesn't this extra step slow down calculation ?  
 A: Yes. However, the result would not be acceptable without it, due to much more visible color errors in busy areas.
