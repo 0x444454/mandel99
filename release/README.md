@@ -1,9 +1,9 @@
 # BINARIES ARE HERE
 
-Pick the binary for your target machine:
+Pick the release you need:
 
-- **mandel99_bench.dsk**    : Benchmark version.
-- **mandel99_fast.dsk**    : Max-speed version (no benchmark).
+- **mandel99_bench.dsk** : Benchmark version.
+- **mandel99_fast.dsk**  : Max-speed version (benchmark not supported).
 
 
 # HOW TO RUN
