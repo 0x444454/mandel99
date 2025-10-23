@@ -76,7 +76,9 @@ The color clash optimization is as follows:
 - Colors are re-ordered as a gradient minimizing perceptual difference between adjacent colors. This means adjacent iterations produce similar color shades.
 - For each 8x1 block, we calculate the color histogram and find the 2 most used colors to assign to Foreground and Background.
 - For each pixel in the 8x1 block, we pick Foreground or Background based on perceptual distance (color similarity).
-This produces a good result even if the clash is still visible in busy areas.
+
+Doesn't this extra step slow down calculation ?  
+Yes. However, the result is not acceptable without, as color clashes would be a lot more visible in busy areas.
 
 # LICENSE
 
