@@ -7,13 +7,17 @@ A fast hi-res Mandelbrot generator for the TI-99/4A
 
 # REQUIREMENTS
 
-- RAM expansion.
+- RAM expansion (at least 8 KB). I test with 32 KB.
+
+Note: The stock TI-99/4A comes with only 256 Bytes of RAM that can be directly used by the CPU.  
+That's Bytes, not KBytes. It also has 16 KB of Video-RAM, but these cannot be accessed directly by the CPU.
+This program is quite small, but needs a little more RAM for temporary buffers used to optimize calculations and rendering.   
 
 # BUILD TYPES
 
 There are two build types:
-- "Benchmark": This is slightly slower but can be used as a speed benchmark program for your TI-99/4A. When the calculation is completed, the number of elapsed frames is printed in the upper-right corner of the screen (hexadecimal number). The lower the number, the better.
-- "Fast": This is about 16% faster. The trick is relocating the core calculation loop in SRAM. Unfortunately, I have not yet found a way to count elapsed frames in this mode without the Console ROM messing with SRAM and destroying my code. So the elapsed frames number will always be 0000.
+- "**Benchmark**": This is slightly slower but can be used as a speed benchmark program for your TI-99/4A. When the calculation is completed, the number of elapsed frames is printed in the upper-right corner of the screen (hexadecimal number). The lower the number, the better.
+- "**Fast**": This is about 16% faster. The trick is relocating the core calculation loop in SRAM. Unfortunately, I have not yet found a way to count elapsed frames in this mode without the Console ROM messing with SRAM and destroying my code. So the elapsed frames number will always be 0000.
 
 
 # CONTROLS
