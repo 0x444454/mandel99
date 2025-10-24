@@ -33,6 +33,8 @@ The app is simply controlled using the keyboard.
 - First pass: 32x24, 16 colors.
 - Second pass: 256x192, 16 colors (Graphics II).
 
+NOTE: Support for F18A will be added in the future.
+
 # ALGORITHM
 
 ### Mandelbrot calculation
