@@ -13,6 +13,10 @@ Note: The stock TI-99/4A comes with only 256 Bytes of RAM (SRAM) that can be dir
 That's Bytes, not KBytes. It also has 16 KB of Video-RAM, but these cannot be accessed directly by the CPU.
 This program is quite small, but needs a little more RAM for temporary buffers used to optimize calculations and rendering.   
 
+# OPTIONAL
+
+If F18A is detected, its GPU is used to accelerate calculations and a custom color palette is set.
+
 # BUILD TYPES
 
 There are two build types:
@@ -33,7 +37,6 @@ The app is simply controlled using the keyboard.
 - First pass: 32x24, 16 colors.
 - Second pass: 256x192, 16 colors (Graphics II).
 
-NOTE: Support for F18A will be added in the future.
 
 # ALGORITHM
 
