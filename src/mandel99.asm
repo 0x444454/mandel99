@@ -13,6 +13,7 @@
 ;   2025-10-18: Setup asm environment and first tests. [DDT]
 ;   2025-10-21: Port completed. [DDT]
 ;   2025-10-22: Experimental fast mode (no benchmark) and comments. [DDT]
+;   2026-08-12: F18A support (colors and acceleration); algorithm optimizations. [DDT]
 
 
 ; Build type.
@@ -38,6 +39,7 @@ IRQMASK EQU     0       ; IRQ mask for non critical section (i.e. LIMI value).
 
 ; SRAM        
 WRKSP   EQU     >8300
+R0LB    EQU     WRKSP+1           ; R0 low byte in WRKSP
 ;KMODE   EQU     >8374
 ;KCODE   EQU     >8375
 ;GPLST   EQU     >837C
@@ -55,11 +57,79 @@ GRMWA   EQU     >9C02   ; GROM address write (byte, hi then lo)
 
 message:
         TEXT "DDT'S FIXED-POINT MANDELBROT",>0D
-        TEXT "VERSION 2025-10-22",>00
+        TEXT "VERSION 2026-08-12",>0D
+msg_F18A:
+        TEXT "F18A GPU DETECTED"
+        TEXT >00
         EVEN
             
-START:      LIMI 0               ; Disable IRQ
-            LWPI WRKSP           ; Set CPU registers workspace.
+START:      LIMI 0                  ; Disable IRQ
+            LWPI WRKSP              ; Set CPU registers workspace.
+
+; Unlock F18A enhanced VDP.
+            LI   R0,>391C           ; VR1/VR39 = Magic value $1C
+            BL   @VWTR              ; Write once
+            BL   @VWTR              ; Write twice, unlock
+            ; No need to restore sane setting in VR1, as we initialize it below.
+            ;LI   R0,>01E0          ; VR1, value $E0, a real sane setting
+            ;BL   @VWTR             ; Write reg
+; Detect F18A.
+            ; Copy GPU code to VRAM
+            LI   R0,>3F00
+            LI   R1,gpu_test_BEGIN
+            LI   R2,gpu_test_END-gpu_test_BEGIN
+            BL   @VMBW
+            JMP  skip_GPU_code      ; Skip the GPU test code (we are the CPU).
+
+; GPU TEST CODE BEGIN    
+gpu_test_BEGIN:
+    CLR @>3F00  ; GPU sets VRAM address $3F00 to 0.
+    IDLE        ; GPU stops.
+gpu_test_END:
+; GPU TEST CODE END  
+
+; Flag for F18A GPU detected.
+F18A_present:
+            DATA 0
+            
+skip_GPU_code:      
+            ; Set the GPU PC which also triggers it
+            LI   R0,>363F
+            BL   @VWTR
+            LI   R0,>3700
+            BL   @VWTR
+        
+            ; Compare the result in >3F00
+            LI   R0,>3F00
+            BL   @VRAD
+            MOVB @VDPRD,R0
+            JEQ  F18A_detected
+            ; GPU not detected. Skip detection text message.
+            CLR  @msg_F18A
+            JMP  !
+F18A_detected:
+            ; GPU detected. Set presence flag.
+            SETO @F18A_present
+            ; Set F18A palette (first 16 colors).
+            LI   R0,>2FC0          ; Reg $2F = %11000000 (DPM = 1 = Palette, AUTO INC = 1, start PR0).
+            BL   @VWTR
+            LI   R0,palette_F18A
+            LI   R2,32             ; 16 colors are 32 bytes.
+set_palette:
+            MOVB *R0+,@VDPWD
+            DEC  R2
+            JNE  set_palette
+            LI   R0,>2F00          ; Reg $2F = %00000000 (DPM = 0 = VRAM, AUTO INC = 0, start PR0).
+            BL   @VWTR            
+            ; Set F18A color gradient (all in sequence).
+            CLR  R0
+            LI   R1,color_grad
+            LI   R2,16
+set_grad:   MOV  R0,*R1+
+            INC  R0
+            DEC  R2
+            JNE  set_grad
+!:
 
 ; Setup VDP for Mode 2 (3 tilesets for bitmap with 8x1 attributes).
             LI   R12,VDPWA       ; point to VDP write-address port
@@ -172,7 +242,7 @@ FILL:       MOVB R1,*R10
             LI   R1,>F100      ; Color byte in high lane.
             LI   R2,>1800      ; 6144 bytes
 CTLP:       MOVB R1,*R10
-            ;AI   R1,>0100      ; Inc color Fg and Bg [FFFFBBBB]
+            ;AI   R1,>0100      ; DEBUG: Inc color Fg and Bg [FFFFBBBB]
             DEC  R2
             JNE  CTLP
 
@@ -315,6 +385,7 @@ Mandelbrot:
             LI   R0,0
             LI   R1,0
             LI   R2,message
+            LI   R3,>F100    ; White on black.
             BL   @print_str
             ; Wait 2 secs.
             LI   R0,120
@@ -330,6 +401,34 @@ relocate:   MOV  *R0+,*R1+
             CI   R0,end_reloc
             JNE  relocate
     .endif
+            
+            ; If F18A GPU is present, relocate in VDP RAM.
+            LIMI 0
+            MOV  @F18A_present,R0
+            JEQ  no_F18A_reloc
+            LI   R0,>3F00                   ; GPU code start addr (dst).
+            LI   R1,gpu_start               ; CPU code start addr (src).
+            LI   R2,gpu_end-gpu_start       ; Size (bytes).
+            MOV  R2,R3                      ; Save size.
+            BL   @VMBW 
+            ; Now add these instructions at the end of the code:
+            ;   C809 3FFE   MOV R9,@>3FFE
+            ;   0340        IDLE
+            LI   R0,>C809                   ; MOV R9,
+            MOVB R0,@VDPWD
+            SWPB R0
+            MOVB R0,@VDPWD
+            LI   R0,>3FFE                   ;        >3FFE
+            MOVB R0,@VDPWD
+            SWPB R0
+            MOVB R0,@VDPWD
+            LI   R0,>0340                   ; IDLE
+            MOVB R0,@VDPWD
+            SWPB R0
+            MOVB R0,@VDPWD
+            LIMI IRQMASK
+     
+no_F18A_reloc:
             
             ; Init default params.
             CLR  @mode       ; Start in lo-res.
@@ -358,7 +457,20 @@ relocate:   MOV  *R0+,*R1+
 calc_start:
             MOV  @frame_cnt,@frame_cnt_start
 
+
 calc_tile:
+
+; NOTE: This timing section is too large (>349ms, so timer wraps around).
+;       ; Timer_start
+;       CLR  R12         ; CRU base of the TMS9901.
+;       SBZ  3           ; Clear timer interrupt request (CRU output bit 3).
+;       SBO  0           ; Enter timer mode (set CRU output bit 0 to 1).
+;       LI   R1,>3FFF    ; Maximum value (14 bits).
+;       INCT R12         ; Address of bit 1 
+;       LDCR R1,14       ; Load value 
+;       DECT R12         ; There is a faster way (see below) 
+;       SBZ  0           ; Exit clock mode, start decrementer
+       
             ; Init color pointer.
             LI   R0,BUF_ITERS_LR
             MOV  @mode,R1
@@ -377,28 +489,96 @@ calc_lr:
 
 ; Calculate current point (cx, cy).
 calc_point:
-            CLR  @iter                  ; Reset iteration counter.
-            CLR  @zx                    ; zx = 0
-            CLR  @zy                    ; zy = 0
-            LI   R8,>8000               ; Pattern for shift adjustments.
+            MOV  @F18A_present, R0
+            JEQ  no_F18A_calc
 
+            ; Use F18A for calculation.
+            LIMI 0
+            ; We assume the GPU to be IDLE here.
+            ;
+            ; Stream cx, cy, and maxiters in VRAM.
+            ; Set VRAM write address to GPU Mandel vars = $3FF0
+            LI   R12,VDPWA
+            LI   R1,>F000     ; low byte = $00 (in high lane)
+            MOVB R1,*R12
+            LI   R1,>7F00     ; high byte with write-bit: $40 | (addr>>8) = $3F
+            MOVB R1,*R12
+            ; Stream 32*24 = 768 bytes with incremental values (Mode 2 tiles, 3 banks).
+            LI   R10,VDPWD
+            MOVB @cx,*R10
+            MOVB @cx+1,*R10
+            MOVB @cy,*R10
+            MOVB @cy+1,*R10
+            MOVB @max_iter,*R10
+            MOVB @max_iter+1,*R10
+            
+            ; Launch GPU calculation (will run in background).
+            LI   R0,>363F
+            BL   @VWTR
+            LI   R0,>3700
+            BL   @VWTR            
+            
+            ; Wait for GPU IDLE.
+            LI   R1,>0200       ; We want to select SR2.
+            MOVB R1,*R12
+            LI   R1,>8F00       ; VDP[$F] %xxxxssss (ssss is the selected Status Register).
+            MOVB R1,*R12
+wait_GPU_idle:
+            MOVB @VDPST,R0     ; Read SR2.
+            ANDI R0,>8000      ; Check "GPU ST" bit.
+            JNE  wait_GPU_idle
+            SWPB R0            ; Select SR0 (default).
+            MOVB R0,*R12
+            LI   R1,>8F00      ; VDP[$F] %xxxxssss (ssss is the selected Status Register).
+            MOVB R1,*R12
+            ; Fetch iters from VRAM (@>3FFE).
+            LI   R0,>3FFE
+            BL   @VRAD
+            MOVB @VDPRD,R9
+            SWPB R9
+            MOVB @VDPRD,R9
+            SWPB R9
+            LIMI IRQMASK
+            JMP  found_color
+                
+no_F18A_calc:            
+            ; Use regs for speedup and relocatability.
+            MOV  @cx,R4                 ; R4 = cx
+            MOV  @cy,R5                 ; R5 = cy
+            CLR  R6                     ; R6 = zx = 0
+            CLR  R7                     ; R7 = zy = 0            
+            LI   R8,>8000               ; Pattern for shift adjustments.
+            CLR  R9                     ; Reset iteration counter.
+            MOV  @max_iter,R10          ; R10 = Max iters.
     .ifeq BUILD_TYPE,0
             ; Normal build, no relocated code.
+            JMP nxt_iter
     .else
             ; Experimental fast build. Jump to iters loop relocated to SRAM.
             B    @>8320
     .endif
-            
+
+            ; GPU ONLY - START
+            ; NOTE: This is only used by the GPU.
+gpu_start:
+            MOV  @>3FF0,R4              ; R4 = cx
+            MOV  @>3FF2,R5              ; R5 = cy
+            CLR  R6                     ; R6 = zx = 0
+            CLR  R7                     ; R7 = zy = 0            
+            LI   R8,>8000               ; Pattern for shift adjustments.
+            CLR  R9                     ; Reset iteration counter.
+            MOV  @>3FF4,R10             ; R10 = Max iters.
+            ; GPU ONLY - END
             
             ;----------- RELOCATABLE ITERS LOOP
             ; WARN: If this is modified, make sure it still fits in SRAM if BUILD_TYPE 1 is used.
 nxt_iter:
             ; z + c
-            A    @cx,@zx                ; zx = zx + cx
-            MOV  @zx,R0                 ; R0 = zx
+            A    R4,R6                ; zx = zx + cx
+            MOV  R6,R0                 ; R0 = zx
 
-            A    @cy,@zy                ; zy = zy + cy
-            MOV  @zy,R2                 ; R2 = zy
+            A    R5,R7                ; zy = zy + cy
+            MOV  R7,R2                 ; R2 = zy
     
             ; Compute zx*zx
             ABS  R0                     ; MPY only handles unsigned.
@@ -418,7 +598,6 @@ srnc1x:     ; Now R0:R1 = zx*zx (*256)
             SWPB R0                     ; R0=BA
             SWPB R1                     ; R1=DC
             MOVB R0,R1                  ; R1=BC. R1 = zx*zx = zx2
-            MOV  R1,@zx2                ; Store zx2
 
             ; Compute zy*zy
             ABS  R2                     ; MPY only handles unsigned.
@@ -438,23 +617,20 @@ srnc1y:     ; Now R2:R3 = zy*zy (*256)
             SWPB R2                     ; R2=BA
             SWPB R3                     ; R3=DC
             MOVB R2,R3                  ; R3=BC. R3 = zy*zy = zy2
-            ;MOV  R3,@zy2                ; Store zy2
 
             MOV  R1,R0                  ; R0 = zx2       
             A    R3,R0                  ; R0 = zx2 + zy2
-            CI   R0,4*1024              ; Bailout test.
-            JL   no_bail
-            ;JHE  found_color            ; Early exit (not black).
-            B    @found_color            ; Early exit (not black).
-no_bail:        
+            CI   R0,4<<10               ; Bailout test.
+            JHE  found_color            ; Early exit (not black).
+
             S    R3,R1                  ; R1 = zx2 - zy2 = new_zx
-            MOV  @zx,R0                 ; R0 = zx
-            MOV  R1,@zx                 ; new_zx = zx2 - zy2
+            MOV  R6,R0                  ; R0 = zx
+            MOV  R1,R6                  ; new_zx = zx2 - zy2
             
             ; Must compute zx*zy, however MPY only handles unsigned.
             ; Check if zx and zy have opposed signs.
-            MOV  R0,R2                  ; R0 = R2 = zx
-            MOV  @zy,R1                 ; R1 = zy
+            MOV  R0,R2                   ; R0 = R2 = zx
+            MOV  R7,R1                  ; R1 = zy
             XOR  R1,R2                  ; R2[15] = Opposite signs (will need to NEG result).
             ABS  R0                     ; Convert to positive.
             ABS  R1                     ; Convert to positive.
@@ -475,33 +651,36 @@ srnc0xy:    ; Now R0:R1 = 2*zx*zy (*512)
             JGT  no_neg
             NEG  R1
 no_neg:            
-            MOV  R1,@zy                 ; new_zy = 2*zx*zy
+            MOV  R1,R7                 ; new_zy = 2*zx*zy
         
             ; Increment iters.
         
-            INC  @iter
-            C    @iter,@max_iter
+            INC  R9
+            C    R9,R10
             JNE  nxt_iter
+found_color:
+;
+gpu_end:
 
     .ifeq BUILD_TYPE,0
-            ; Normal build, no relocated code.
+            ; Normal build, no code relocated to SRAM.
     .else
             ; Experimental fast build uses iters loop relocated to SRAM.
-            B   @found_color             ; End of iters loop, resume from DRAM.
-end_reloc:  NOP            
+            B   @end_reloc             ; End of iters loop, resume from DRAM.
     .endif            
+end_reloc:
 
             ;----------- BACK FROM RELOCATABLE ITERS LOOP
-found_color:
-            MOV  @iter,R0
+;
+            ; Iters is in R9.
             MOV  @iters_ptr,R4
-            MOV  R0,*R4                  ; Save iter.
+            MOV  R9,*R4                  ; Save iter.
             MOV  @mode,R1
             JNE  skp_render_pix          ; In HR, we wait for the entire 8x8 tile to be completed.
             ; Render low-res tile (single giant pixel). Setup call inputs:
-            MOV  R0,R2                   ;   Iters.
             MOV  @pixelx,R0              ;   Big pixel x.
             MOV  @pixely,R1              ;   Big pixel y.
+            MOV  R9,R2                   ;   Iters.
             BL   @render_big_pixel_LR    ; In LR, we render a "big" pixel (8x8 screen pixels).
 skp_render_pix:
             INCT @iters_ptr
@@ -540,6 +719,20 @@ nxt_row:    MOV  @mode,R0
 
             
 end_tile:   ; End of tile.
+
+; NOTE: This timing section is too large (>349ms, so timer wraps around).
+;       ; Timer_stop
+;       CLR  R12 
+;       SBO  0           ; Enter timer mode
+;       STCR R2,15       ; Read current value (plus mode bit)
+;       SRL  R2,1        ; Get rid of mode bit
+;       LDCR R12,15      ; Clear Clock register, and exit timer mode 
+;       ; Print timer
+;       LI R0,0    
+;       LI R1,0
+;       BL @print_hex 
+
+
             MOV  @mode,R0
             JNE  end_tile_hi_res
             ; In lo-res, we have just one tile.
@@ -578,6 +771,7 @@ prepare_nxt_tile:
 ;    ; Debug
 ;    LI R0,0    
 ;    LI R1,0
+;    LI R3,>F100 ; Colors
 ;    MOV @tilex,R2
 ;    BL @print_hex            
 ;    LI R2,','
@@ -638,10 +832,13 @@ no_skip:
 end_mandel:
             ; End of screen.
             ; Print elapsed frames (in hex).
-            LI   R0,28
-            LI   R1,0
+            LI   R0,28      ; Text x.
+            LI   R1,0       ; Text y.
+            LI   R3,>6100   ; Colors.
+            
             MOV  @frame_cnt,R2
             S    @frame_cnt_start,R2
+            
             BL   @print_hex
             
             ;LIMI 0
@@ -651,6 +848,8 @@ foreva:
 
           
 ; ------------------- SWITCH TO LOW RES -------------------
+; Clobbered:
+;   R0,R1,R2,R10,R12
 set_lo_res:
             MOV  @incx,R0
             JEQ  do_set_lo_res       ; First init. Don't check mode.
@@ -659,8 +858,11 @@ set_lo_res:
             B    *R11                ; Already in LR.
 do_set_lo_res:
             MOV  R11,@tmp_ret        ; Save return address.
-            LI   R0,>1F00
-            BL   @set_screen_colors            
+            LI   R0,>1F00            ; For default palette.
+            MOV  @F18A_present,R12
+            JEQ  !
+            LI   R0,>1200            ; For F18A palette.
+!:          BL   @set_screen_colors             
             MOV  @incx,R0            ; Check if incs are present.
             JNE  no_init_incs
             ; Default incs (LR).
@@ -720,10 +922,13 @@ set_hi_res:
             B   *R11                ; Already in HR.
 do_set_hi_res:            
             MOV R11,@tmp_ret        ; Save return address.
-            LI R0,1
+            LI  R0,1
             MOV R0,@mode            ; Set mode to HIGH RES (1).
-            LI  R0,>1E00
-            BL  @set_screen_colors            
+            LI  R0,>1E00            ; For default palette.
+            MOV @F18A_present,R12
+            JEQ !
+            LI  R0,>1200            ; For F18A palette.
+!:          BL  @set_screen_colors            
             ; We are switching back from LR, so undo centroids and divide incs by 8.
             MOV @incx,R0
             SRA R0,1                ; Half-tile width in complex plane.
@@ -778,78 +983,80 @@ calc_zoom:
 
 ; ------------------- CHECK USER INPUT -------------------
 chk_input:
-            ; Check keyboard input and set R3[4..0]=[xxxFLRDU], like the joystick bits (1=pressed).
+            ; Check keyboard input and set R4[4..0]=[xxxFLRDU], like the joystick bits (1=pressed).
             ; We use the arrow keys ("E","S","D","X") and SHIFT as Fire (modifier; actually in this case... modifire ! :-).
-            LI   R3,>00                 ; Defaulty to nothing pressed.
+            LI   R4,>00                 ; Defaulty to nothing pressed.
             ; Column 0
             LI   R12,>0024              ; CRU address for column selection.
             LI   R2,>0000               ; Column 0 for: =, SPACE,ENTER,FCTN,SHIFT,CTRL
             LDCR R2,3                   ; Select column (3 bits).
             TB   -10                    ; Test CRU bit for SHIFT (1=idle, 0=pressed).
             JEQ  not_SHIFT
-            ORI  R3,>10                 ; SHIFT = Fire.
+            ORI  R4,>10                 ; SHIFT = Fire.
 not_SHIFT:  ; Column 1
             LI   R2,>0100               ; Column 1 for: L,O,9,2,D,W,X
             LDCR R2,3                   ; Select column (3 bits).
             TB   -8                     ; Test CRU bit for "X" (1=idle, 0=pressed).
             JEQ  not_X
-            ORI  R3,>02                 ; "X" = Down.
+            ORI  R4,>02                 ; "X" = Down.
 not_X:      TB   -10                    ; Test CRU bit for "S" (1=idle, 0=pressed).
             JEQ  not_S
-            ORI  R3,>08                 ; "S" = Left.
+            ORI  R4,>08                 ; "S" = Left.
 not_S:      ; Column 2
             LI   R2,>0200               ; Column 2 for: ",",K,I,8,3,D,E,C
             LDCR R2,3                   ; Select column (3 bits).
             TB   -9                     ; Test CRU bit for "E" (1=idle, 0=pressed).
             JEQ  not_E
-            ORI  R3,>01                 ; "E" = Up.
+            ORI  R4,>01                 ; "E" = Up.
 not_E:      TB   -10                    ; Test CRU bit for "D" (1=idle, 0=pressed).
             JEQ  not_D
-            ORI  R3,>04                 ; "D" = Right.
+            ORI  R4,>04                 ; "D" = Right.
 not_D:  
-;        ; Debug print R3 (input bits).
+
+;        ; Debug print R4 (input bits).
 ;        LI   R0,0
 ;        LI   R1,0
-;        MOV  R3,R2
+;        MOV  R4,R2
+;        LI   R3,>F100
 ;        BL   @print_hex
             
-            MOV  R3,R3                  ; Check if we have any input.
+            MOV  R4,R4                  ; Check if we have any input.
             LI   R2,>0F                 ; Ignore FIRE (used only as modifier).
-            CZC  R2,R3                  ; Check if any direction bit is set.
+            CZC  R2,R4                  ; Check if any direction bit is set.
             JNE  have_input
             ; No input. RETURN
             B   *R11 
 
 have_input:            
             ; We have some input.
-            BL   @set_lo_res            ; Any input causes to restart from LO-RES. This does not clobber R3.
+            BL   @set_lo_res            ; Any input causes to restart from LO-RES. This does not clobber R4.
             LI   R2,>10                 ; Check if FIRE pressed.
-            COC  R2,R3
+            COC  R2,R4
             JEQ  fire_pressed
             ; Fire NOT pressed.
             ; Check UP
             LI   R2,>01
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_UP
             ; UP
             A    @incy,@ay
             JMP  no_DOWN
 no_UP:      ; Check DOWN
             LI   R2,>02
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_DOWN
             ; DOWN
             S    @incy,@ay
 no_DOWN:    ; Check LEFT
             LI   R2,>08
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_LEFT
             ; LEFT
             S    @incx,@ax
             JMP  no_RIGHT
 no_LEFT:    ; Check RIGHT
             LI   R2,>04
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_RIGHT
             ; RIGHT
             A    @incx,@ax
@@ -864,7 +1071,7 @@ no_RIGHT:   ; Finally recalculate lo-res mandel.
 fire_pressed:
             ; Check UP (zoom in)
             LI   R2,>01
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_UPf
             ; UP (zoom in)
             MOV  @incx,R2
@@ -874,11 +1081,12 @@ fire_pressed:
             BL   @calc_zoom
 zmin_skp:   LI   R0,0
             LI   R1,0
+            LI   R3,>F100
             BL   @print_hex
             JMP  no_DOWNf
 no_UPf:     ; Check DOWN (zoom out)
             LI   R2,>02
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_DOWNf
             ; DOWN (zoom out)
             MOV  @incx,R2
@@ -888,11 +1096,12 @@ no_UPf:     ; Check DOWN (zoom out)
             BL   @calc_zoom
 zmout_skp:  LI   R0,0
             LI   R1,0
+            LI   R3,>F100
             BL   @print_hex
             JMP  no_RIGHTf
 no_DOWNf:   ; Check LEFT (iters--)
             LI   R2,>08
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_LEFTf
             ; LEFT  (iters--)
             MOV  @max_iter,R2
@@ -902,11 +1111,12 @@ no_DOWNf:   ; Check LEFT (iters--)
             MOV  R2,@max_iter
 itdec_skp:  LI   R0,0
             LI   R1,0
+            LI   R3,>F100
             BL   @print_hex
             JMP  no_RIGHTf
 no_LEFTf:   ; Check RIGHT (iters++)
             LI   R2,>04
-            COC  R2,R3
+            COC  R2,R4
             JNE  no_RIGHTf
             ; RIGHT (iters++)
             MOV  @max_iter,R2
@@ -916,11 +1126,12 @@ no_LEFTf:   ; Check RIGHT (iters++)
             MOV  R2,@max_iter
 itinc_skp:  LI   R0,0
             LI   R1,0
+            LI   R3,>F100
             BL   @print_hex
 no_RIGHTf:  ; Finally recalculate lo-res mandel.
             MOV  @ax,@tax
             MOV  @ay,@tay
-            LI   R0,10
+            LI   R0,6
             BL   @delay_frames
             
             B    @calc_start        ; Do not return. Branch directly to calc_tile.
@@ -1096,7 +1307,13 @@ no_top0:    C    R0,@TOP_2_COLS+2   ; Compare to top1.
             JEQ  col_done           ; Matched top1. Nothing to do (bit is already 0).
             ; Best match using perceptual difference table.
             SLA  R0,5               ; R0 = Row offset in diff-table (each row is 32 bytes).
-            AI   R0,color_pdiff     ; R0 = Table row ptr for comparison.
+            LI   R4,color_pdiff     ; R4 = Perceptual difference table ptr, default colors.
+            ; Check for F18A.
+            MOV  @F18A_present,R12
+            JEQ  no_F18A_colors
+            LI   R4,color_pdiff_F18A ; R4 = Perceptual difference table ptr, F18A colors.
+no_F18A_colors:
+            A    R4,R0              ; R0 = Table row ptr for comparison.
             MOV  @TOP_2_COLS,R4     ; R4 = Top0.
             SLA  R4,1               ; R4 = Top0 offset in row.
             A    R0,R4              ; R4 = Top0 diff ptr.
@@ -1230,7 +1447,7 @@ color_grad:
     DATA >C  ; Dark Green            | #21B03B   |
 ;            +-----------------------+-----------+
 
-; ------------------- TABLE OF PERCEPTUAL DIFFERENCES BETWEEN COLORS -------------------
+; ------------------- TABLE OF PERCEPTUAL DIFFERENCES BETWEEN TI-99 COLORS -------------------
 color_pdiff:
 ;            0,     1,     2,     3,     4,     5,     6,     7,     8,     9,     A,     B,     C,     D,     E,     F
     DATA 00000, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535 ; 0
@@ -1250,6 +1467,45 @@ color_pdiff:
     DATA 65535, 44082, 19452, 17754, 26865, 21536, 21719, 14452, 17632, 13736, 16289, 14338, 19892, 21618, 00000, 09254 ; E
     DATA 65535, 65535, 22882, 19746, 33367, 27283, 28119, 16016, 22221, 15766, 18725, 15673, 24752, 27119, 09254, 00000 ; F
 
+
+; ------------------- CUSTOM F18A COLORS, and TABLE OF PERCEPTUAL DIFFERENCES BETWEEN THEM -------------------
+
+palette_F18A:
+    DATA >0000  ; 0  transparent / unused
+    DATA >0000  ; 1  black
+    DATA >0439  ; 2
+    DATA >054B  ; 3
+    DATA >056C  ; 4
+    DATA >057D  ; 5
+    DATA >059F  ; 6
+    DATA >06AF  ; 7
+    DATA >0CDF  ; 8
+    DATA >0FFF  ; 9  white
+    DATA >0FE9  ; A
+    DATA >0FC4  ; B
+    DATA >0FA0  ; C
+    DATA >0F80  ; D
+    DATA >0D60  ; E
+    DATA >0A30  ; F
+    
+color_pdiff_F18A:
+;            0,     1,     2,     3,     4,     5,     6,     7,     8,     9,     A,     B,     C,     D,     E,     F
+    DATA 00000, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535 ; 0
+    DATA 65535, 00000, 21359, 24564, 27650, 30309, 36647, 39695, 54323, 65535, 61563, 53325, 46695, 41370, 33907, 25231 ; 1
+    DATA 65535, 21359, 00000, 04487, 11012, 15266, 24528, 28702, 35502, 42128, 53113, 52556, 48863, 43146, 36431, 29445 ; 2
+    DATA 65535, 24564, 04487, 00000, 07240, 11482, 20367, 23490, 29445, 37071, 49940, 49614, 45935, 40793, 35525, 29756 ; 3
+    DATA 65535, 27650, 11012, 07240, 00000, 04265, 12178, 15071, 22488, 30953, 43988, 44019, 41006, 36842, 33266, 30113 ; 4
+    DATA 65535, 30309, 15266, 11482, 04265, 00000, 07818, 10781, 19218, 28077, 41641, 41976, 39366, 35738, 32941, 31337 ; 5
+    DATA 65535, 36647, 24528, 20367, 12178, 07818, 00000, 03194, 14194, 23245, 37797, 38870, 37214, 34812, 33568, 35038 ; 6
+    DATA 65535, 39695, 28702, 23490, 15071, 10781, 03194, 00000, 11902, 20441, 38243, 36146, 35192, 33700, 33304, 36177 ; 7
+    DATA 65535, 54323, 35502, 29445, 22488, 19218, 14194, 11902, 00000, 09822, 26850, 27596, 28180, 28375, 30252, 36408 ; 8
+    DATA 65535, 65535, 42128, 37071, 30953, 28077, 23245, 20441, 09822, 00000, 14655, 18969, 21414, 23438, 27180, 35600 ; 9
+    DATA 65535, 61563, 53113, 49940, 43988, 41641, 37797, 38243, 26850, 14655, 00000, 07997, 14144, 20278, 25433, 35574 ; A
+    DATA 65535, 53325, 52556, 49614, 44019, 41976, 38870, 36146, 27596, 18969, 07997, 00000, 07017, 14396, 20171, 31317 ; B
+    DATA 65535, 46695, 48863, 45935, 41006, 39366, 37214, 35192, 28180, 21414, 14144, 07017, 00000, 07729, 13930, 25917 ; C
+    DATA 65535, 41370, 43146, 40793, 36842, 35738, 34812, 33700, 28375, 23438, 20278, 14396, 07729, 00000, 07186, 20016 ; D
+    DATA 65535, 33907, 36431, 35525, 33266, 32941, 33568, 33304, 30252, 27180, 25433, 20171, 13930, 07186, 00000, 12342 ; E
+    DATA 65535, 25231, 29445, 29756, 30113, 31337, 35038, 36177, 36408, 35600, 35574, 31317, 25917, 20016, 12342, 00000 ; F
 
 ; ------------------- SET SCREEN COLORS -------------------
 ; Inputs:
@@ -1274,15 +1530,16 @@ set_screen_colors:
 ;   R0: x-pos [0..31]
 ;   R1: y-pos [0..24]
 ;   R2: Ptr to STR.
+;   R3: Foreground and background: %ffffbbbb00000000 
 ; Outputs:
 ;   [none]
 ; Clobbered:
-;   R0,R1,R2,R3,R4,R5
+;   R0,R1,R2,R3,R4,R5,R6
 print_str:            
             MOV     R11,@tmp_ret    ; Save return addr.
-            MOV     R2,R5           ; R5 = str ptr.
+            MOV     R2,R6           ; R6 = str ptr.
 .nxtchr:    CLR     R2
-            MOVB    *R5+,R2         ; Fetch char to print.
+            MOVB    *R6+,R2         ; Fetch char to print.
             SWPB    R2
             JEQ     .done           ; End of str.
             CI      R2,>0D          ;
@@ -1291,12 +1548,12 @@ print_str:
             LI      R0,0            ; Newline: x=0.
             INC     R1              ; Newline: y++
             JMP     .nxtchr
-.no_CR      MOV     R0,R3           ; Save x
-            MOV     R1,R4           ; Save y
+.no_CR      MOV     R0,R4           ; Save x
+            MOV     R1,R5           ; Save y
             BL      @print_char
-            MOV     R3,R0           ; Restore x
+            MOV     R4,R0           ; Restore x
             INC     R0              ; Inc x.
-            MOV     R4,R1           ; Restore y
+            MOV     R5,R1           ; Restore y
             JMP     .nxtchr
 .done:      ; RETURN
             MOV     @tmp_ret,R11    ; Restore return addr.
@@ -1307,6 +1564,7 @@ print_str:
 ;   R0: x-pos [0..31]
 ;   R1: y-pos [0..24]
 ;   R2: ASCII
+;   R3: Foreground and background: %ffffbbbb00000000 
 ; Outputs:
 ;   [none]
 ; Clobbered:
@@ -1317,7 +1575,7 @@ print_char:
             ; Save R0,R1,R2.
             MOV     R0,@tmp0
             MOV     R1,@tmp1
-            MOV     R1,@tmp2
+            MOV     R2,@tmp2
 
             ; Find VRAM destination address.
             SWPB    R1            ; R1 = y*256
@@ -1329,17 +1587,18 @@ print_char:
             SWPB    R1             ; Put low byte of address in high lane.
             MOVB    R1,@VDPWA      ; Low byte of VRAM write addr.
             SWPB    R1             ; Put high byte in high lane.
-            ORI     R1,>6000       ; OR $4000 ($0000 start addr | $4000 write op).
+            ORI     R1,>6000       ; OR $4000 ($2000 start addr | $4000 write op).
             MOVB    R1,@VDPWA      ; High byte of VRAM write addr.
-            ; Stream attribs (Dark Red foreground, transparent background).
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
-            MOVB    R1,@VDPWD
+            ; Stream attribs.
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            MOVB    R3,@VDPWD
+            
 
             ; Write VDP start address (bitmap).
             SWPB    R1             ; Put low byte of address in high lane.
@@ -1368,6 +1627,8 @@ print_char:
             DEC     R1
             JNE     .cpy8
             MOVB    R1,@VDPWD      ; Write 0 to 8th byte.
+
+            ; Done.
             LIMI    IRQMASK
             
             ; Restore R0,R1,R2.
@@ -1383,6 +1644,7 @@ print_char:
 ;   R0: x-pos [0..31]
 ;   R1: y-pos [0..24]
 ;   R2: value
+;   R3: Foreground and background: %ffffbbbb00000000 
 ; Outputs:
 ;   R0: x-pos + 4
 ;   R1: y-pos (no change).
@@ -1483,6 +1745,63 @@ vb_IRQ:     CB      @VDPST,R0           ; Dummy read to clear VDP's Interrupt Fl
             B       *R11
 
 
+; ******************* VDP UTILITY ROUTINES *******************
+
+
+; VDP Multiple Byte Write
+;
+; R0   Starting write address in VDP RAM
+; R1   Starting read address in CPU RAM
+; R2   Number of bytes to send to the VDP RAM
+;
+; R1 is modified by the value of R2
+; R2 is changed to 0
+;
+VMBW: 
+        MOVB @R0LB,@VDPWA      ; Send low byte of VDP RAM write address
+        ORI  R0,>4000          ; Set the two MSbits to 01 for write
+        MOVB R0,@VDPWA         ; Send high byte of VDP RAM write address
+VMBWLP: MOVB *R1+,@VDPWD       ; Write byte to VDP RAM
+        DEC  R2                ; Byte counter
+        JNE  VMBWLP            ; Check if done
+        ANDI R0,>3FFF          ; Restore R0 top two MSbits
+        B    *R11
+      
+
+; VDP Write To Register
+;
+; R0 MSB    VDP register to write to
+; R0 LSB    Value to write
+;
+VWTR:
+        MOVB @R0LB,@VDPWA       ; Send low byte (value) to write to VDP register
+        ORI  R0,>8000           ; Set up a VDP register write operation (10)
+        MOVB R0,@VDPWA          ; Send high byte (address) of VDP register
+        ANDI R0,>3FFF           ; Restore R0 top two MSbits
+        B    *R11
+
+
+; VDP Set Write Address
+;
+; R0   Address to set VDP address counter to
+;
+VWAD:
+        MOVB @R0LB,@VDPWA       ; Send low byte of VDP RAM write address
+        ORI  R0,>4000           ; Set the two MSbits to 01 for write
+        MOVB R0,@VDPWA          ; Send high byte of VDP RAM write address
+        ANDI R0,>3FFF           ; Restore R0 top two MSbits
+        B    *R11
+
+
+; VDP Set Read Address
+;
+; R0   Address to set VDP address counter to
+;
+VRAD:
+        MOVB @R0LB,@VDPWA       ; Send low byte of VDP RAM write address
+        ANDI R0,>3FFF           ; Make sure the two MSbits are 00 for read
+        MOVB R0,@VDPWA          ; Send high byte of VDP RAM write address
+        B    *R11
 
 
 
