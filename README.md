@@ -15,7 +15,7 @@ This program is quite small, but needs a little more RAM for temporary buffers u
 
 # OPTIONAL
 
-If F18A is detected, its GPU is used to accelerate calculations and a custom color palette is set.
+If __F18A__ is detected, its GPU is used to accelerate calculations and a custom color palette is set.
 
 # BUILD TYPES
 
