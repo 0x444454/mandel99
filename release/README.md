@@ -6,7 +6,7 @@ Pick the release you need:
 
 - **mandel99_bench** : Benchmark version.
 - **mandel99_fast**  : Max CPU speed version (benchmark not supported).
-- **mandelF18A**     : Max GPU speed version (F18A required).
+- **mandelF18A**     : GPU version (ultra-fast but **requires** a F18A GPU).
 
 ## Media type
 
