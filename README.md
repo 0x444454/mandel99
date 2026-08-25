@@ -104,7 +104,7 @@ A: Yes. However, the result would not be acceptable without it, due to much more
 ### F18A Fat-Pixels mode
 
 This is a custom 128x256 resolution, allocating 4 bits per pixel so there are no color clashes.  
-On the downside, the horizontal resolution is halved (so calculation is faster).
+On the downside, the horizontal resolution is halved (but calculation is faster ;-).
 
 
 # LICENSE
