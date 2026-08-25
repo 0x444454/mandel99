@@ -7,7 +7,7 @@
 
 ## CPU or F18A GPU
 
-The default build script builds the CPU version **mandel99**.
+The default build script builds the CPU version (**mandel99**).
 To build the F18A GPU version, change **mandel99** to **mandelF18A**.
 
 ## Select the build type (only for **mandel99**)
