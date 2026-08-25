@@ -2,16 +2,22 @@
 
 Pick the release you need:
 
-- **mandel99_bench.dsk** : Benchmark version.
-- **mandel99_fast.dsk**  : Max-speed version (benchmark not supported).
+## Build type
 
+- **mandel99_bench** : Benchmark version.
+- **mandel99_fast**  : Max CPU speed version (benchmark not supported).
+- **mandelF18A**     : Max GPU speed version (F18A required).
 
-# HOW TO RUN
+## Media type
 
-You can:
+- **.dsk** : Disk
+- **.bin** : Cartridge.
+
+# HOW TO RUN THE DISK VERSION
+
+Alternatives:
 - Autoboot the disk using Extended BASIC.
-- Manually load the **MANDEL99** program.
-- Use Editor/Assembler option 5 to load **DSK1.MANDEL995**. Note the name is all uppercase and there is a "5" at the end (denoting EA5 format).
+- Use Editor/Assembler option 5 to load **DSK1.MANDEL995** or **DSK1.MANDELF18A5**. Note the name is all uppercase and there is a "5" at the end (denoting EA5 format).
 
 
 # LICENSE
