@@ -2,10 +2,12 @@
 ## A fast hi-res Mandelbrot generator/benchmark for the TI-99/4A
 
 **mandel99**  
+
 ![screenshots](media/screenshot-20251022.png)
 ![screenshots](media/screenshot-20251022-2.png)
 
 **mandelF18A**  
+
 ![screenshots](media/screenshot-20260825.png)
 
 
