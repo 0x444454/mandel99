@@ -13,16 +13,16 @@
 
 # REQUIREMENTS
 
-- RAM expansion (at least 8 KB). I test with 32 KB.
+- __RAM expansion__ (at least 8 KB). I test with 32 KB.
 
 Note: The stock TI-99/4A comes with only 256 Bytes of RAM (SRAM) that can be directly used by the CPU.  
 That's Bytes, not KBytes. It also has 16 KB of Video-RAM, but these cannot be accessed directly by the CPU.
 This program is quite small, but needs a little more RAM for temporary buffers used to optimize calculations and rendering.   
 
 # OPTIONAL
-
-- If __F18A__ is detected, the CPU builds (**mandel99**) will use the GPU to partially accelerate pixel calculations and a more pleasant custom color palette is used.
-- An exclusive __F18A__ build is available (**mandelF18A**), fully accelerating all calculations, and rendering 128x192 in fat-pixel mode with 16 independent colors (no clashes).
+- __F18A GPU__
+  - If __F18A__ is detected, the CPU builds (**mandel99**) will use the GPU to partially accelerate pixel calculations and a more pleasant custom color palette is used.
+  - An exclusive __F18A__ build is available (**mandelF18A**), fully accelerating all calculations, and rendering 128x192 in fat-pixel mode with 16 independent colors (no clashes).
 
 # BUILD TYPES
 
