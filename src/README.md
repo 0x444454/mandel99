@@ -5,7 +5,12 @@
 - TI 99 Cross-Development Tools: https://github.com/endlos99/xdt99
 - A bash shell to run the ```build.sh``` script.
 
-## Select the build type (if needed)
+## CPU or F18A GPU
+
+The default build script builds the CPU version **mandel99**.
+To build the F18A GPU version, change **mandel99** to **mandelF18A**.
+
+## Select the build type (only for **mandel99**)
 
 Open the ```mandel99.asm``` file. At the beginning, you will find the following lines:
 
