@@ -3,6 +3,7 @@
 
 ![screenshots](media/screenshot-20251022.png)
 ![screenshots](media/screenshot-20251022-2.png)
+![screenshots](media/screenshot-20260825.png)
 
 
 # REQUIREMENTS
@@ -15,7 +16,8 @@ This program is quite small, but needs a little more RAM for temporary buffers u
 
 # OPTIONAL
 
-If __F18A__ is detected, its GPU is used to accelerate calculations and a custom color palette is set.
+- If __F18A__ is detected, the CPU version (**mandel99**) its GPU is used to accelerate pixel calculations and a custom color palette is set.
+- An exclusive __F18A__ build is available (**mandelF18A**), rendering 128x192 in fat-pixel mode (16 independent colors). Everything but the UI runs completely on the F18A GPU for a much higher speed.
 
 # BUILD TYPES
 
@@ -23,6 +25,7 @@ There are two build types:
 - "**Benchmark**": This is slightly slower but can be used as a speed benchmark program for your TI-99/4A. When the calculation is completed, the number of elapsed frames is printed in the upper-right corner of the screen (hexadecimal number). The lower the number, the faster the machine.
 - "**Fast**": This is about 16% faster. The trick is relocating the core calculation loop in SRAM. Unfortunately, I have not yet found a way to count elapsed frames in this mode without the Console ROM messing with SRAM and destroying my code. So the elapsed frames number will always be 0000.
 
+NOTE: The __F18A__ exclusive build (**mandelF18A**) only supports **Benchmark** mode. This version renders at half-horizontal resolution (fat pixels), so benchmark numbers are not comparable to the CPU version (***mandel99**).
 
 # CONTROLS
 
@@ -35,7 +38,9 @@ The app is simply controlled using the keyboard.
 
 # SUPPORTED RESOLUTIONS
 - First pass: 32x24, 16 colors.
-- Second pass: 256x192, 16 colors (Graphics II).
+- Second pass:  
+  - **mandel99**: 256x192, 16 colors (Graphics II).
+  - **mandelF18A** 128x192, 16 independent colors (fat-pixel mode).
 
 
 # ALGORITHM
@@ -43,9 +48,9 @@ The app is simply controlled using the keyboard.
 ### Mandelbrot calculation
 This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia about the Mandelbrot set).  
 The TMS9900 processor has integer 16x16-bits multiplication, but lacks support for any floating point math.
-This algorithm makes the calculation much faster by using Q6.10 fixed-point math, albeit at the cost of a limited magnification (zoom-in) range. 
+This algorithm makes the calculation much faster by using Q4.12 fixed-point math, albeit at the cost of a limited magnification (zoom-in) range. 
 The slow part of the calculation consists of two squares and one multiplication per iteration.  
-A Q6.10 number uses 6 bits for the signed integer part (5+sign), and 10 bits for the fractional part.  
+A Q4.12 number uses 6 bits for the signed integer part (5+sign), and 10 bits for the fractional part.  
 
 Note that the code can be optimized further, and will be in future releases.  
 Currently, a stock TI-99/4A is be able to render the full set preview (first-pass) in less than 2 seconds, and the full hi-res image in 83 seconds.
@@ -55,19 +60,18 @@ Currently, a stock TI-99/4A is be able to render the full set preview (first-pas
 There are two different fixed-point notations using "Q" numbers. TI and ARM. I am using ARM notation. More info here:  
 https://en.wikipedia.org/wiki/Q_(number_format)  
 
-The current implementation uses Q6.10, so numbers in the range [-32, +32) can be represented.  
+The current implementation uses Q4.12, so numbers in the range [-8, +8) can be represented.  
 The Mandelbrot set is contained in a circle with radius 2. However, during calculation, numbers greater than 2 are encountered, depending on the point being calculated.  
 Here is the maximum magnitude reached for each point during the calculation:  
 
 ![screenshots](media/max_values.jpg)
 
-Q5.11 is arguably the best compromise between max-zoom and overflow errors during calculation, however in this version I use Q6.10 to keep the calculation routine size small enough to fit in fast SRAM. A future optimization allowing Q5.11 (hence 2x deeper zoom) is most probably possible.
 
 ### Rendering
 
 The rendering is done in two passes:
-- First pass is low-res (32x24).
-- Second pass is high-res (256x192).
+- First pass is low-res: 32x24.
+- Second pass is high-res: 256x192 (**mandel99**), or 128x192 (**mandelF18A**).
 
 The first pass is low-resolution and serves two purposes:
 - Quick preview of rendered image.
@@ -91,7 +95,13 @@ The color clash optimization is as follows:
 - For each pixel in the 8x1 block, we use the most similar color, either Foreground or Background; i.e. the one with minimum perceptual distance from the actual calculated pixel color.
 
 Q: Doesn't this extra step slow down calculation ?  
-A: Yes. However, the result would not be acceptable without it, due to much more visible color errors in busy areas.
+A: Yes. However, the result would not be acceptable without it, due to much more visible color errors in busy areas.  
+
+### F18A Fat-Pixels mode
+
+This is a custom 128x256 resolution, allocating 4 bits per pixel so there are no color clashes.  
+On the downside, the horizontal resolution is halved (so calculation is faster).
+
 
 # LICENSE
 
