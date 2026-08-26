@@ -50,7 +50,7 @@ The app is simply controlled using the keyboard.
 # ALGORITHM
 
 ### Mandelbrot calculation
-This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia about the Mandelbrot set).  
+This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia about the [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set)).  
 The TMS9900 processor has integer 16x16-bits multiplication, but lacks support for any floating point math.
 This algorithm makes the calculation much faster by using Q4.12 fixed-point math, albeit at the cost of a limited magnification (zoom-in) range. 
 The slow part of the calculation consists of two squares and one multiplication per iteration.  
