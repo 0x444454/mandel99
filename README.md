@@ -27,7 +27,7 @@ This program is quite small, but needs a little more RAM for temporary buffers u
 # BUILD TYPES
 
 There are 3 build types:
-- "**mandel99 Benchmark**": This is slightly slower but can be used as a speed benchmark program for your TI-99/4A. When the calculation is completed, the number of elapsed frames is printed in the upper-right corner of the screen (hexadecimal number). The lower the number, the faster the machine.
+- "**mandel99 Benchmark**": This is slightly slower but can be used as a CPU speed benchmark program for your TI-99/4A. When the calculation is completed, the number of elapsed frames is printed in the upper-right corner of the screen (hexadecimal number). The lower the number, the faster the machine.
 - "**mandel99 Fast**": This is about 16% faster. The trick is relocating the core calculation loop in SRAM. Unfortunately, I have not yet found a way to count elapsed frames in this mode without the Console ROM messing with SRAM and destroying my code. So the elapsed frames number will always be 0000.
 - "**mandelF18A**"" This requires a F18A and runs completely in the GPU for super-fast rendering. It renders at half-horizontal resolution (fat pixels), so benchmark numbers are not comparable to the CPU version (***mandel99**).
 
