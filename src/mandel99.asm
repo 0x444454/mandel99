@@ -14,6 +14,9 @@
 ;   2025-10-21: Port completed. [DDT]
 ;   2025-10-22: Experimental fast mode (no benchmark) and comments. [DDT]
 ;   2026-08-12: F18A support (colors and acceleration); algorithm optimizations. [DDT]
+;   2026-08-25: Split source code for CPU builds (mandel99.asm) and F18A GPU build (mandelF18A.asm).
+;               *** This is the mandel99 build. ****
+;   2026-08-25: Fixed Mandelbrot arithmetic; upgrade fixed point to Q4.12; optimize iteration loop. [DDT]
 
 
 ; Build type.
@@ -57,7 +60,7 @@ GRMWA   EQU     >9C02   ; GROM address write (byte, hi then lo)
 
 message:
         TEXT "DDT'S FIXED-POINT MANDELBROT",>0D
-        TEXT "VERSION 2026-08-12",>0D
+        TEXT "VERSION 2026-08-25",>0D
 msg_F18A:
         TEXT "F18A GPU DETECTED"
         TEXT >00
@@ -336,15 +339,16 @@ BUF_COLOR:      BSS  2*8
 BUF_HIST:       BSS 2*16
 TOP_2_COLS:     BSS  2*2
 
-; Bytes
-;vars            EQU >A000          ; DRAM (slowest; only used for testing).
+; Variable storage depends on build type.
+; BUILD_TYPE=0 runs with interrupts enabled outside critical sections, so keep
+; application variables in normal 32K expansion RAM.
+; BUILD_TYPE=1 runs permanently at LIMI 0, so use the upper scratchpad RAM
+; for variables as well as the relocated iteration loop.
     .ifeq BUILD_TYPE,0
-vars            EQU >8320           ; SRAM (after regs).
+vars:           BSS  >38            ; 28 words in normal 32K RAM.
     .else
-vars            EQU >83C8           ; SRAM (after regs and iters calc loop).
+vars            EQU  >83C8          ; 28 words: >83C8..>83FE in scratchpad.
     .endif
-
-
 
 pixelx          EQU vars + >00      ; Pixel x pos in current tile (0 = left).
 pixely          EQU vars + >02      ; Pixel y pos in current tile (0 = top).
@@ -375,10 +379,16 @@ tmp2            EQU vars + >32      ; Misc temporary storage.
 frame_cnt       EQU vars + >34      ; Frame counter.
 frame_cnt_start EQU vars + >36      ; Frame counter.
 
-; $8300-$831F Registers
-;;;;;;; $8320-$8356 Vars (see above) 
-; $8320-839F  Iters-loop
-; $83C0-$83FF System stuff.
+; Scratchpad map:
+;   >8300->831F  Registers/workspace.
+;   BUILD_TYPE=0:
+;       >8320->83FF  not used by Mandel99 variables/code.
+;   BUILD_TYPE=1 (LIMI 0 for the entire run):
+;       >8320->837B  relocated iteration loop (92 bytes).
+;       >837C->83C7  leave untouched.
+;       >83C8->83FE  vars (28 words).
+;       >83FF        unused.
+ITERS_SRAM      EQU >8320
  
 Mandelbrot:
             ; Print welcome message.
@@ -396,7 +406,7 @@ Mandelbrot:
     .else
             ; Relocate iters loop in SRAM.
             LI   R0,nxt_iter
-            LI   R1,>8320
+            LI   R1,ITERS_SRAM
 relocate:   MOV  *R0+,*R1+
             CI   R0,end_reloc
             JNE  relocate
@@ -437,11 +447,11 @@ no_F18A_reloc:
             LI   R0,>0010     ; 16 iters
             MOV  R0,@max_iter
 
-            ; Default coordinates (fixed_point, *1024)
-            LI   R0,-2*1024
+            ; Default coordinates (Q4.12 fixed point, *4096).
+            LI   R0,-2*4096
             MOV  R0,@ax
 
-            LI   R0,1500
+            LI   R0,6000
             MOV  R0,@ay
             
             ; Uninit incx.
@@ -547,15 +557,14 @@ no_F18A_calc:
             MOV  @cy,R5                 ; R5 = cy
             CLR  R6                     ; R6 = zx = 0
             CLR  R7                     ; R7 = zy = 0            
-            LI   R8,>8000               ; Pattern for shift adjustments.
-            CLR  R9                     ; Reset iteration counter.
             MOV  @max_iter,R10          ; R10 = Max iters.
+            MOV  R10,R9                 ; R9 = Remaining iterations.
     .ifeq BUILD_TYPE,0
             ; Normal build, no relocated code.
             JMP nxt_iter
     .else
             ; Experimental fast build. Jump to iters loop relocated to SRAM.
-            B    @>8320
+            B    @ITERS_SRAM
     .endif
 
             ; GPU ONLY - START
@@ -565,99 +574,87 @@ gpu_start:
             MOV  @>3FF2,R5              ; R5 = cy
             CLR  R6                     ; R6 = zx = 0
             CLR  R7                     ; R7 = zy = 0            
-            LI   R8,>8000               ; Pattern for shift adjustments.
-            CLR  R9                     ; Reset iteration counter.
             MOV  @>3FF4,R10             ; R10 = Max iters.
+            MOV  R10,R9                 ; R9 = Remaining iterations.
             ; GPU ONLY - END
             
             ;----------- RELOCATABLE ITERS LOOP
-            ; WARN: If this is modified, make sure it still fits in SRAM if BUILD_TYPE 1 is used.
+            ; BUILD_TYPE 1 copies nxt_iter..end_reloc to ITERS_SRAM (>8320).
+            ; Current size is 92 bytes (>8320..>837B).
 nxt_iter:
-            ; z + c
-            A    R4,R6                ; zx = zx + cx
-            MOV  R6,R0                 ; R0 = zx
+            ; The loop stores z^2 (without c) in R6/R7.
+            ; Add c first to reconstruct the current z, then test |z|^2 and prepare z^2 for the next iteration.
+            ; Coordinates and z are Q4.12.
+            A    R4,R6                  ; zx = zx + cx
+            A    R5,R7                  ; zy = zy + cy
 
-            A    R5,R7                ; zy = zy + cy
-            MOV  R7,R2                 ; R2 = zy
-    
-            ; Compute zx*zx
-            ABS  R0                     ; MPY only handles unsigned.
-            MPY  R0,R0                  ; R0:R1 = zx*zx (*1024)
-            ; Perform fixed point adjustment (divide by 1024)
-            SRL  R1,1                   ; Shift LSW right.
-            SRA  R0,1                   ; Arithmetic-shift MSW; C = Bit shifted out.
-            JNC  srnc0x                 ; Don't set bit 15.
-            SOC  R8,R1                  ; Set bit 15.
-srnc0x:     ; Now R0:R1 = zx*zx (*512)
-            SRL  R1,1                   ; Shift LSW right.
-            SRA  R0,1                   ; Arithmetic-shift MSW; C = Bit shifted out.
-            JNC  srnc1x                 ; Don't set bit 15.
-            SOC  R8,R1                  ; Set bit 15.
-srnc1x:     ; Now R0:R1 = zx*zx (*256)
-            ; Now extract the central word (BC) from R0:R1 (AB:CD). This is faster than shifting right 8.
-            SWPB R0                     ; R0=BA
-            SWPB R1                     ; R1=DC
-            MOVB R0,R1                  ; R1=BC. R1 = zx*zx = zx2
+            ; Compute the two squares as full unsigned 32-bit Q8.24 values.
+            ; Use separate source registers for MPY: R14/R12 retain |zx|/|zy| for the cross product while R0:R1 and R2:R3 receive the squares.
+            ; Do NOT truncate before the bailout test: values outside the radius-2 circle can exceed the 16-bit Q4.12 range.
+            MOV  R6,R14
+            ABS  R14
+            MOV  R14,R0                 ; MPY multiplies source by old destination.
+            MPY  R14,R0                 ; R0:R1 = zx*zx, Q8.24; R14 = |zx|
 
-            ; Compute zy*zy
-            ABS  R2                     ; MPY only handles unsigned.
-            MPY  R2,R2                  ; R2:R3 = zy*zy (*1024)
-            ; Perform fixed point adjustment (divide by 1024).
-            SRL  R3,1                   ; Shift LSW right.
-            SRA  R2,1                   ; Arithmetic-shift MSW; C = Bit shifted out.
-            JNC  srnc0y                 ; Don't set bit 15.
-            SOC  R8,R3                  ; Set bit 15.
-srnc0y:     ; Now R0:R1 = zx*zx (*512)
-            SRL  R3,1                   ; Shift LSW right.
-            SRA  R2,1                   ; Arithmetic-shift MSW; C = Bit shifted out.
-            JNC  srnc1y                 ; Don't set bit 15.
-            SOC  R8,R3                  ; Set bit 15.
-srnc1y:     ; Now R2:R3 = zy*zy (*256)
-            ; Now extract the central word (BC) from R2:R3 (AB:CD). This is faster than shifting right 8.
-            SWPB R2                     ; R2=BA
-            SWPB R3                     ; R3=DC
-            MOVB R2,R3                  ; R3=BC. R3 = zy*zy = zy2
+            MOV  R7,R12
+            ABS  R12
+            MOV  R12,R2                 ; Seed destination with second multiplicand.
+            MPY  R12,R2                 ; R2:R3 = zy*zy, Q8.24; R12 = |zy|
 
-            MOV  R1,R0                  ; R0 = zx2       
-            A    R3,R0                  ; R0 = zx2 + zy2
-            CI   R0,4<<10               ; Bailout test.
-            JHE  found_color            ; Early exit (not black).
+            ; Bail out if: zx^2 + zy^2 >= 4.0.
+            ; In Q8.24, 4.0 is >04000000, so only the high word of the 32-bit sum is needed.
+            MOV  R0,R13
+            MOV  R1,R15
+            A    R3,R15                 ; Add low words and propagate carry.
+            JNC  .no_sq_carry
+            INC  R13
+.no_sq_carry:
+            A    R2,R13
+            CI   R13,>0400
+            JHE  iters_done
 
-            S    R3,R1                  ; R1 = zx2 - zy2 = new_zx
-            MOV  R6,R0                  ; R0 = zx
-            MOV  R1,R6                  ; new_zx = zx2 - zy2
-            
-            ; Must compute zx*zy, however MPY only handles unsigned.
-            ; Check if zx and zy have opposed signs.
-            MOV  R0,R2                   ; R0 = R2 = zx
-            MOV  R7,R1                  ; R1 = zy
-            XOR  R1,R2                  ; R2[15] = Opposite signs (will need to NEG result).
-            ABS  R0                     ; Convert to positive.
-            ABS  R1                     ; Convert to positive.
-            
-            MPY  R1,R0                  ; R0:R1 = zx * zy
-            ; Perform fixed point adjustment (divide by 512). NOTE: Only 512 because we need (2*zx*zy).
-            SRL  R1,1                   ; Shift LSW right.
-            SRA  R0,1                   ; Arithmetic-shift MSW; C = Bit shifted out.
-            JNC  srnc0xy                ; Don't set bit 15.
-            SOC  R8,R1                  ; Set bit 15.
-srnc0xy:    ; Now R0:R1 = 2*zx*zy (*512)
-            ; Now extract the central word (BC) from R0:R1 (AB:CD). This is faster than shifting right 8.
-            SWPB R0                     ; R0=BA
-            SWPB R1                     ; R1=DC
-            MOVB R0,R1                  ; R1=BC. R1 = 2*zx*zy = new_zy
-            ; Check if we need to NEG result (i.e. we had opposite signs).
-            CI   R2,0
-            JGT  no_neg
-            NEG  R1
-no_neg:            
-            MOV  R1,R7                 ; new_zy = 2*zx*zy
-        
-            ; Increment iters.
-        
-            INC  R9
-            C    R9,R10
+            ; Since |z|^2 < 4 here, each square is < 4 and safely fits Q4.12.
+            ; Convert Q8.24 -> Q4.12: result = (HI << 4) | (LO >> 12).
+            SLA  R0,4
+            SRL  R1,12
+            SOC  R1,R0                  ; R0 = zx^2, Q4.12
+
+            SLA  R2,4
+            SRL  R3,12
+            SOC  R3,R2                  ; R2 = zy^2, Q4.12
+
+            ; Save the cross-product sign before replacing zx, then form the real part for the next stored z^2.
+            MOV  R6,R8
+            XOR  R7,R8                  ; R8 sign bit = operands had opposite signs.
+            S    R2,R0                  ; R0 = zx^2 - zy^2
+            MOV  R0,R6
+
+            ; Imaginary part: 2*zx*zy.
+            ; The magnitudes survived the square MPYs, so the third multiply needs no operand reload/ABS.
+            MPY  R12,R14                ; R14:R15 = |zx*zy|, Q8.24
+
+            ; Q8.24 -> Q4.12 and multiply by 2 (all together).
+            ; result = (HI << 5) | (LO >> 11).
+            SLA  R14,5
+            SRL  R15,11
+            SOC  R15,R14                ; R14 = |2*zx*zy|, Q4.12
+            MOV  R14,R7
+
+            ; Restore the sign.
+            MOV  R8,R8                  ; Re-establish flags from saved sign.
+            JLT  .neg_xy
+            DEC  R9                     ; Decrement remaining iters.
             JNE  nxt_iter
+            JMP  iters_done
+.neg_xy:
+            NEG  R7
+            DEC  R9
+            JNE  nxt_iter               ; Decrement remaining iters.
+
+iters_done:
+            ; R9 = remaining iters; convert to iters number.
+            S    R9,R10                 ; R10 = max_iter - remaining.
+            MOV  R10,R9                 ; R9 = completed iterations.
 found_color:
 ;
 gpu_end:
@@ -866,7 +863,7 @@ do_set_lo_res:
             MOV  @incx,R0            ; Check if incs are present.
             JNE  no_init_incs
             ; Default incs (LR).
-            LI   R0,128
+            LI   R0,512              ; 0.125 in Q4.12.
             MOV  R0,@incx
             MOV  R0,@incy
             JMP  cont_LR
@@ -1090,7 +1087,7 @@ no_UPf:     ; Check DOWN (zoom out)
             JNE  no_DOWNf
             ; DOWN (zoom out)
             MOV  @incx,R2
-            CI   R2,128
+            CI   R2,512              ; Maximum LR increment = 0.125 in Q4.12.
             JHE  zmout_skp
             SLA  R2,1
             BL   @calc_zoom
