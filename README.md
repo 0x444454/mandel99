@@ -107,6 +107,17 @@ This is a custom 128x256 resolution, allocating 4 bits per pixel so there are no
 On the downside, the horizontal resolution is halved (but calculation is faster ;-).
 
 
+# For other platforms
+
+## CVBasic
+Ported by visrealm:  
+https://github.com/visrealm/mandelcvb
+
+## 6502 Machines
+Mandelbr8:  
+https://github.com/0x444454/mandelbr8
+
+
 # LICENSE
 
 Creative Commons, CC BY
