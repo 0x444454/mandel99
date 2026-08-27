@@ -21,7 +21,7 @@
 ;               Now using fat pixels. Relocate sprite tables above F18A fat-pixel framebuffer to work around Classic99 bug.
 ;               Moved full Mandel calculation, working variables, tile-skip logic, color mapping, and framebuffer rendering to the F18A GPU. GPU image XORG at >4000 and is checked against the >4800 GRAM limit.
 ;               Fixed signed MPY bug handling 2*zx*zy.
-;               Changed fixed point to Q6.12 for increased precision and 4x zoom-in ability.
+;               Changed fixed point to Q4.12 for increased precision and 4x zoom-in ability.
 ;               Optimized iteration loop.
 
         IDT  'MANDF18A'
